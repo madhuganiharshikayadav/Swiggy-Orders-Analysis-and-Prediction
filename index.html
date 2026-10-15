@@ -677,4 +677,73 @@ function trainModel(){
     else fn++;
   });
   const accuracy = (tp+tn)/(tp+tn+fp+fn||1);
-  const precision = 
+  const precision = tp/(tp+fp||1);
+  const recall = tp/(tp+fn||1);
+  const f1 = 2*precision*recall/(precision+recall||1);
+  const importance = featureNames.map((name,i)=>({name,value:Math.abs(w[i])})).sort((a,b)=>b.value-a.value);
+  model = {zones,cuisines,pays,means,stds,featureNames,w,b,predictProb,metrics:{accuracy,precision,recall,f1,tp,tn,fp,fn},importance};
+  return model;
+}
+
+/* ===================== UI + CHARTS ===================== */
+function fillSelect(id, values, allLabel){
+  const el=document.getElementById(id); if(!el) return;
+  const current=el.value;
+  el.innerHTML=(allLabel ? `<option value="All">${allLabel}</option>` : '')+
+    values.map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}">${v}</option>`).join('');
+  if([...el.options].some(o=>o.value===current)) el.value=current;
+}
+function chartOptions(){
+  return {responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8B97A8',font:{family:'Inter'}}}},scales:{x:{ticks:{color:'#8B97A8'},grid:{color:'rgba(139,151,168,.12)'}},y:{ticks:{color:'#8B97A8'},grid:{color:'rgba(139,151,168,.12)'}}}};
+}
+function makeChart(id, config){
+  const canvas=document.getElementById(id); if(!canvas || typeof window.Chart!=='function') return;
+  if(charts[id]) charts[id].destroy();
+  charts[id]=new window.Chart(canvas.getContext('2d'),config);
+}
+function renderKpis(data){
+  const late=data.filter(d=>d.Late).length, avg=data.reduce((a,d)=>a+d.DeliveryTimeMinutes,0)/(data.length||1);
+  document.getElementById('kpiGrid').innerHTML=[['Total Orders',data.length.toLocaleString(),'records'],['Late Delivery Rate',((late/(data.length||1))*100).toFixed(1)+'%',late+' late orders'],['Avg Delivery Time',avg.toFixed(1)+' min','across filtered orders'],['Model Status',model?'Ready':'Training','logistic regression']].map(x=>`<div class="kpi"><div class="kpi-label">${x[0]}</div><div class="kpi-value">${x[1]}</div><div class="kpi-sub">${x[2]}</div></div>`).join('');
+}
+function renderCharts(data){
+  const zones=uniqueSorted(data.map(d=>d.Zone));
+  makeChart('chartZone',{type:'bar',data:{labels:zones,datasets:[{label:'On-time',data:zones.map(z=>data.filter(d=>d.Zone===z&&!d.Late).length),backgroundColor:'#3DDC97'},{label:'Late',data:zones.map(z=>data.filter(d=>d.Zone===z&&d.Late).length),backgroundColor:'#FF6259'}]},options:chartOptions()});
+  const cuisines=uniqueSorted(data.map(d=>d.Cuisine));
+  makeChart('chartCuisine',{type:'bar',data:{labels:cuisines,datasets:[{label:'Avg minutes',data:cuisines.map(c=>{const a=data.filter(d=>d.Cuisine===c);return a.reduce((s,d)=>s+d.DeliveryTimeMinutes,0)/(a.length||1)}),backgroundColor:'#FC8019',borderRadius:4}]},options:{...chartOptions(),indexAxis:'y'}});
+  const sample=data.filter((_,i)=>i%Math.max(1,Math.floor(data.length/120))===0);
+  makeChart('chartScatter',{type:'scatter',data:{datasets:[{label:'Orders',data:sample.map(d=>({x:d.DistanceKM,y:d.DeliveryTimeMinutes})),backgroundColor:'#4FA8FF'}]},options:chartOptions()});
+  if(model) makeChart('chartFeatureImportance',{type:'bar',data:{labels:model.importance.slice(0,10).map(x=>x.name),datasets:[{label:'Importance',data:model.importance.slice(0,10).map(x=>x.value),backgroundColor:'#FC8019'}]},options:{...chartOptions(),indexAxis:'y'}});
+}
+function renderPerformance(){
+  const m=model.metrics;
+  document.getElementById('metricGrid').innerHTML=[['Accuracy',m.accuracy],['Precision',m.precision],['Recall',m.recall],['F1 Score',m.f1]].map(x=>`<div class="metric-card"><div class="val">${(x[1]*100).toFixed(1)}%</div><div class="lab">${x[0]}</div></div>`).join('');
+  document.getElementById('cmTable').innerHTML=`<thead><tr><th></th><th>Predicted On-time</th><th>Predicted Late</th></tr></thead><tbody><tr><th>Actual On-time</th><td>${m.tn}</td><td>${m.fp}</td></tr><tr><th>Actual Late</th><td>${m.fn}</td><td>${m.tp}</td></tr></tbody>`;
+  document.getElementById('methodologyText').textContent=`Trained on ${ORDER_DATA.length} records with an 80/20 seeded train/test split, standardized numeric features, one-hot categorical features, gradient descent, and L2 regularization.`;
+}
+function renderExplorer(data){document.getElementById('explorerCount').textContent=data.length;document.getElementById('explorerBody').innerHTML=data.slice(0,300).map(d=>`<tr><td>${d.OrderID}</td><td>${d.Zone}</td><td>${d.Cuisine}</td><td>${d.PaymentMethod}</td><td>${d.DistanceKM}</td><td>${d.PrepTimeMinutes}</td><td>₹${d.OrderValueINR}</td><td>${d.DeliveryTimeMinutes} min</td><td><span class="badge ${d.Late?'badge-late':'badge-ontime'}">${d.Late?'Late':'On-time'}</span></td></tr>`).join('');}
+function renderAll(){
+  model=trainModel();
+  const zones=uniqueSorted(ORDER_DATA.map(d=>d.Zone)), cuisines=uniqueSorted(ORDER_DATA.map(d=>d.Cuisine)), pays=uniqueSorted(ORDER_DATA.map(d=>d.PaymentMethod));
+  fillSelect('fZone',zones,'All Zones'); fillSelect('fCuisine',cuisines,'All Cuisines'); fillSelect('fPay',pays,'All Methods');
+  fillSelect('pZone',zones); fillSelect('pCuisine',cuisines); fillSelect('pPay',pays);
+  const filtered=applyFilters(ORDER_DATA); renderKpis(filtered); renderCharts(filtered); renderExplorer(filtered); renderPerformance();
+  document.getElementById('footRecordCount').textContent=ORDER_DATA.length; document.getElementById('footModelStatus').textContent='ready'; document.getElementById('modelStatusMini').textContent='ready';
+}
+function predict(){
+  const row={Zone:document.getElementById('pZone').value,Cuisine:document.getElementById('pCuisine').value,PaymentMethod:document.getElementById('pPay').value,IsFirstOrder:+document.getElementById('pFirst').value,DistanceKM:+document.getElementById('pDist').value,PrepTimeMinutes:+document.getElementById('pPrep').value,OrderValueINR:+document.getElementById('pValue').value};
+  const prob=model.predictProb(rowToVector(row,model.zones,model.cuisines,model.pays,model.means,model.stds)); const level=prob>.65?'high':prob>.35?'med':'low';
+  document.getElementById('predResult').innerHTML=`<div class="risk-badge risk-${level}">${level.toUpperCase()} RISK</div><div class="pred-prob">${(prob*100).toFixed(1)}%</div><div style="color:var(--text-dim);font-size:12px;">Estimated probability of delivery over 45 minutes</div><div class="pred-drivers"><div class="driver-row"><span>Distance</span><div class="driver-bar"><div class="driver-fill" style="width:${Math.min(100,row.DistanceKM/12*100)}%;background:var(--accent)"></div></div><b>${row.DistanceKM} km</b></div><div class="driver-row"><span>Prep time</span><div class="driver-bar"><div class="driver-fill" style="width:${Math.min(100,row.PrepTimeMinutes/45*100)}%;background:var(--warning)"></div></div><b>${row.PrepTimeMinutes} min</b></div></div>`;
+}
+function bindUi(){
+  document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));item.classList.add('active');document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+item.dataset.tab).classList.add('active');document.getElementById('pageTitle').textContent=item.textContent.trim();}));
+  ['fZone','fCuisine','fPay'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{const d=applyFilters(ORDER_DATA);renderKpis(d);renderCharts(d);renderExplorer(d);}));
+  document.getElementById('btnPredict').addEventListener('click',predict);
+  const area=document.getElementById('uploadArea'), input=document.getElementById('fileUpload'); document.getElementById('btnBrowse').addEventListener('click',()=>input.click());
+  input.addEventListener('change',e=>handleFile(e.target.files[0])); area.addEventListener('dragover',e=>{e.preventDefault();area.classList.add('drag')}); area.addEventListener('dragleave',()=>area.classList.remove('drag')); area.addEventListener('drop',e=>{e.preventDefault();area.classList.remove('drag');handleFile(e.dataTransfer.files[0])});
+}
+function handleFile(file){if(!file||typeof XLSX==='undefined')return;const reader=new FileReader();reader.onload=e=>{const wb=XLSX.read(e.target.result,{type:'array'}), raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); ORDER_DATA=raw.map((r,i)=>({...r,OrderID:r.OrderID||'ORD'+(10000+i),DistanceKM:+r.DistanceKM,PrepTimeMinutes:+r.PrepTimeMinutes,OrderValueINR:+r.OrderValueINR,DeliveryTimeMinutes:+r.DeliveryTimeMinutes,IsFirstOrder:+r.IsFirstOrder||0,Late:+r.DeliveryTimeMinutes>45})).filter(validRows);document.getElementById('uploadMsg').textContent=`Loaded ${ORDER_DATA.length} records`;document.getElementById('uploadMsg').className='upload-msg ok';renderAll()};reader.readAsArrayBuffer(file)}
+function startApp(){if(typeof window.Chart!=='function'){const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';s.onload=()=>{bindUi();renderAll()};s.onerror=()=>{document.getElementById('footModelStatus').textContent='chart library unavailable';bindUi();renderAll()};document.head.appendChild(s)}else{bindUi();renderAll()}}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startApp); else startApp();
+</script>
+</body>
+</html> 
