@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swiggy Orders — Late Delivery Risk Prediction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0A0C10;
+  --bg-elevated:#0F131A;
+  --surface:#161C27;
+  --surface-2:#1C2433;
+  --border:#273041;
+  --border-soft:#1E2633;
+  --text:#F0F3F7;
+  --text-dim:#8B97A8;
+  --text-faint:#5E6A7B;
+  --accent:#FC8019;
+  --accent-dim:#D96A0F;
+  --accent-glow:rgba(252,128,25,.18);
+  --danger:#FF6259;
+  --danger-glow:rgba(255,98,89,.16);
+  --warning:#F2B705;
+  --warning-glow:rgba(242,183,5,.16);
+  --success:#3DDC97;
+  --success-glow:rgba(61,220,151,.16);
+  --info:#4FA8FF;
+  --info-glow:rgba(79,168,255,.16);
+  --radius:12px;
+  --radius-sm:8px;
+  --font-display:'Space Grotesk',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  background:
+    radial-gradient(1100px 550px at 90% -5%, rgba(252,128,25,.07), transparent 55%),
+    radial-gradient(800px 450px at -5% 105%, rgba(79,168,255,.05), transparent 55%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--font-body);
+  font-size:14px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--accent-glow);color:var(--accent);}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+::-webkit-scrollbar-thumb:hover{background:var(--text-faint);}
+
+.app{display:flex;min-height:100vh;}
+
+/* SIDEBAR */
+.sidebar{
+  width:240px;flex-shrink:0;
+  background:var(--bg-elevated);
+  border-right:1px solid var(--border-soft);
+  display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+  z-index:50;
+}
+.brand{
+  padding:22px 20px 18px;
+  border-bottom:1px solid var(--border-soft);
+  display:flex;flex-direction:column;gap:2px;
+}
+.brand-mark{display:flex;align-items:center;gap:10px;}
+.brand-dot{
+  width:12px;height:12px;border-radius:3px;
+  background:var(--accent);
+  box-shadow:0 0 16px var(--accent-glow);
+  transform:rotate(45deg);
+  flex-shrink:0;
+}
+.brand-name{font-family:var(--font-display);font-weight:700;font-size:15.5px;letter-spacing:.2px;}
+.brand-sub{font-size:11px;color:var(--text-faint);margin-left:22px;letter-spacing:.4px;text-transform:uppercase;}
+
+.nav{flex:1;padding:14px 12px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;}
+.nav-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-faint);padding:10px 10px 6px;font-weight:600;}
+.nav-item{
+  display:flex;align-items:center;gap:11px;
+  padding:10px 12px;border-radius:var(--radius-sm);
+  color:var(--text-dim);font-size:13.5px;font-weight:500;
+  cursor:pointer;transition:background .15s,color .15s;
+  border:1px solid transparent;
+  user-select:none;
+}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.85;}
+.nav-item:hover{background:var(--surface);color:var(--text);}
+.nav-item.active{
+  background:var(--accent-glow);
+  color:var(--accent);
+  border-color:rgba(252,128,25,.28);
+}
+.nav-item.active svg{opacity:1;}
+.sidebar-foot{
+  padding:16px 20px;border-top:1px solid var(--border-soft);
+  font-size:11px;color:var(--text-faint);line-height:1.6;
+}
+.sidebar-foot b{color:var(--text-dim);}
+
+/* MAIN */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{
+  padding:20px 30px 16px;
+  border-bottom:1px solid var(--border-soft);
+  position:sticky;top:0;z-index:40;
+  backdrop-filter:blur(12px);
+  background-color:rgba(10,12,16,.88);
+}
+.topbar-row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.page-title{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.2px;}
+.page-sub{color:var(--text-dim);font-size:12.5px;margin-top:3px;}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.select-wrap{display:flex;flex-direction:column;gap:4px;}
+.select-wrap label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-faint);font-weight:600;}
+select, input[type=text], input[type=number]{
+  background:var(--surface);
+  border:1px solid var(--border);
+  color:var(--text);
+  padding:8px 10px;
+  border-radius:var(--radius-sm);
+  font-family:var(--font-body);
+  font-size:12.5px;
+  min-width:130px;
+  outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+select:focus, input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow);}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:8px 14px;border-radius:var(--radius-sm);
+  font-family:var(--font-body);font-size:12.5px;font-weight:600;
+  cursor:pointer;border:1px solid transparent;
+  transition:background .15s,border-color .15s,transform .1s;
+}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--accent);color:#111;border-color:transparent;}
+.btn-primary:hover{background:#ff8f2e;}
+.btn-ghost{background:var(--surface);color:var(--text-dim);border-color:var(--border);}
+.btn-ghost:hover{background:var(--surface-2);color:var(--text);}
+
+.content{padding:24px 30px 40px;flex:1;}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+
+/* KPI CARDS */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px;}
+.kpi{
+  background:var(--surface);
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius);
+  padding:16px 18px;
+  position:relative;overflow:hidden;
+}
+.kpi::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,var(--accent),transparent);
+  opacity:.7;
+}
+.kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-faint);font-weight:600;margin-bottom:6px;}
+.kpi-value{font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.3px;}
+.kpi-sub{font-size:11.5px;color:var(--text-dim);margin-top:4px;}
+
+/* PANELS */
+.panel{
+  background:var(--surface);
+  border:1px solid var(--border-soft);
+  border-radius:var(--radius);
+  padding:18px 20px;
+  margin-bottom:18px;
+}
+.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap;}
+.panel-title{font-family:var(--font-display);font-weight:600;font-size:15px;}
+.panel-note{font-size:12px;color:var(--text-dim);}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;}
+@media(max-width:980px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+/* CHARTS */
+.chart-wrap{position:relative;height:260px;}
+.chart-wrap.sm{height:200px;}
+
+/* PREDICTION */
+.predict-form{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;}
+.predict-form .full{grid-column:1/-1;}
+.predict-form label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-faint);font-weight:600;display:block;margin-bottom:5px;}
+.predict-btn{width:100%;margin-top:8px;padding:13px;font-size:14px;justify-content:center;}
+.pred-result{
+  background:var(--bg-elevated);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:22px;
+  text-align:center;
+  min-height:280px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.pred-result .risk-badge{
+  display:inline-block;padding:6px 16px;border-radius:20px;
+  font-weight:700;font-size:13px;letter-spacing:.4px;margin-bottom:10px;
+}
+.risk-low{background:var(--success-glow);color:var(--success);}
+.risk-med{background:var(--warning-glow);color:var(--warning);}
+.risk-high{background:var(--danger-glow);color:var(--danger);}
+.pred-prob{font-family:var(--font-display);font-size:42px;font-weight:700;margin:4px 0 8px;}
+.pred-drivers{margin-top:18px;width:100%;text-align:left;}
+.driver-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12.5px;}
+.driver-row:last-child{border-bottom:none;}
+.driver-bar{height:6px;border-radius:3px;background:var(--border);flex:1;margin:0 12px;overflow:hidden;}
+.driver-fill{height:100%;border-radius:3px;}
+
+/* MODEL PERF */
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;}
+@media(max-width:800px){.metric-grid{grid-template-columns:1fr 1fr;}}
+.metric-card{
+  background:var(--bg-elevated);border:1px solid var(--border-soft);
+  border-radius:var(--radius-sm);padding:14px;text-align:center;
+}
+.metric-card .val{font-family:var(--font-display);font-size:22px;font-weight:700;}
+.metric-card .lab{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--border-soft);}
+th{color:var(--text-faint);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;}
+td{color:var(--text-dim);}
+tr:hover td{background:rgba(255,255,255,.02);}
+
+.upload-area{
+  border:1.5px dashed var(--border);
+  border-radius:var(--radius);
+  padding:28px;text-align:center;
+  background:var(--bg-elevated);
+  transition:border-color .2s,background .2s;
+}
+.upload-area:hover,.upload-area.drag{border-color:var(--accent);background:var(--accent-glow);}
+.upload-msg{margin-top:10px;font-size:12.5px;color:var(--text-dim);}
+.upload-msg.ok{color:var(--success);}
+.upload-msg.err{color:var(--danger);}
+
+.badge{
+  display:inline-block;padding:2px 8px;border-radius:10px;
+  font-size:11px;font-weight:600;
+}
+.badge-late{background:var(--danger-glow);color:var(--danger);}
+.badge-ontime{background:var(--success-glow);color:var(--success);}
+
+.method-box{
+  background:var(--bg-elevated);border:1px solid var(--border-soft);
+  border-radius:var(--radius);padding:18px 20px;font-size:13px;color:var(--text-dim);line-height:1.65;
+}
+.method-box h3{font-family:var(--font-display);color:var(--text);font-size:14px;margin:14px 0 6px;}
+.method-box h3:first-child{margin-top:0;}
+.method-box ul{padding-left:18px;margin:6px 0;}
+.method-box li{margin-bottom:4px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <div class="brand-dot"></div>
+        <div class="brand-name">Swiggy Predict</div>
+      </div>
+      <div class="brand-sub">Late Delivery Risk</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-label">Analytics</div>
+      <div class="nav-item active" data-tab="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>
+        Overview
+      </div>
+      <div class="nav-item" data-tab="prediction">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        Prediction
+      </div>
+      <div class="nav-item" data-tab="performance">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+        Model Performance
+      </div>
+      <div class="nav-item" data-tab="explorer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        Data Explorer
+      </div>
+      <div class="nav-label">System</div>
+      <div class="nav-item" data-tab="methodology">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+        Methodology
+      </div>
+      <div class="nav-item" data-tab="upload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+        Upload Data
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      Model trained in-browser<br>
+      <b id="footRecordCount">—</b> records · <span id="footModelStatus">idle</span>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-row">
+        <div>
+          <div class="page-title" id="pageTitle">Overview</div>
+          <div class="page-sub" id="pageSub">Swiggy order analytics & late-delivery risk model</div>
+        </div>
+        <div class="filters" id="globalFilters">
+          <div class="select-wrap">
+            <label>Zone</label>
+            <select id="fZone"><option value="All">All Zones</option></select>
+          </div>
+          <div class="select-wrap">
+            <label>Cuisine</label>
+            <select id="fCuisine"><option value="All">All Cuisines</option></select>
+          </div>
+          <div class="select-wrap">
+            <label>Payment</label>
+            <select id="fPay"><option value="All">All Methods</option></select>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+      <!-- OVERVIEW -->
+      <section class="tab-panel active" id="tab-overview">
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Late vs On-time by Zone</div></div>
+            <div class="chart-wrap"><canvas id="chartZone"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Avg Delivery Time by Cuisine</div></div>
+            <div class="chart-wrap"><canvas id="chartCuisine"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Delivery Time vs Distance</div><div class="panel-note">Scatter of sample orders</div></div>
+          <div class="chart-wrap"><canvas id="chartScatter"></canvas></div>
+        </div>
+      </section>
+
+      <!-- PREDICTION -->
+      <section class="tab-panel" id="tab-prediction">
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Late Delivery Risk Prediction</div>
+            </div>
+            <div class="panel-note" style="margin-bottom:16px;">
+              Estimate the probability that an order will be delivered late (&gt; 45 min) using a logistic regression model trained in-browser on historical orders.
+            </div>
+            <div class="predict-form">
+              <div>
+                <label>Zone</label>
+                <select id="pZone"></select>
+              </div>
+              <div>
+                <label>Cuisine</label>
+                <select id="pCuisine"></select>
+              </div>
+              <div>
+                <label>Payment Method</label>
+                <select id="pPay"></select>
+              </div>
+              <div>
+                <label>First Order?</label>
+                <select id="pFirst">
+                  <option value="0">No</option>
+                  <option value="1">Yes</option>
+                </select>
+              </div>
+              <div>
+                <label>Distance (KM)</label>
+                <input type="number" id="pDist" value="4.2" min="0.5" max="20" step="0.1">
+              </div>
+              <div>
+                <label>Prep Time (min)</label>
+                <input type="number" id="pPrep" value="18" min="5" max="60" step="1">
+              </div>
+              <div>
+                <label>Order Value (₹)</label>
+                <input type="number" id="pValue" value="320" min="50" max="5000" step="10">
+              </div>
+              <div>
+                <label>Model status</label>
+                <div style="padding-top:8px;font-size:12px;color:var(--text-dim);" id="modelStatusMini">training…</div>
+              </div>
+              <div class="full">
+                <button class="btn btn-primary predict-btn" id="btnPredict">Predict Late Delivery Risk</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Prediction Result</div></div>
+            <div class="pred-result" id="predResult">
+              <div style="color:var(--text-faint);font-size:13px;">
+                Fill in the order details and click <b style="color:var(--text-dim)">Predict Late Delivery Risk</b> to see the result.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MODEL PERFORMANCE -->
+      <section class="tab-panel" id="tab-performance">
+        <div class="metric-grid" id="metricGrid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Confusion Matrix</div><div class="panel-note">Test set</div></div>
+            <table id="cmTable"></table>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Feature Importance</div><div class="panel-note">|coefficient| — standardized logistic regression</div></div>
+            <div class="chart-wrap sm"><canvas id="chartFeatureImportance"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Training summary</div></div>
+          <p id="methodologyText" style="color:var(--text-dim);font-size:13px;line-height:1.65;"></p>
+        </div>
+      </section>
+
+      <!-- DATA EXPLORER -->
+      <section class="tab-panel" id="tab-explorer">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">Order Records</div>
+            <div class="panel-note"><span id="explorerCount">0</span> rows shown</div>
+          </div>
+          <div style="overflow-x:auto;max-height:520px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>OrderID</th><th>Zone</th><th>Cuisine</th><th>Payment</th>
+                  <th>Distance</th><th>Prep</th><th>Value</th><th>Delivery</th><th>Late?</th>
+                </tr>
+              </thead>
+              <tbody id="explorerBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- METHODOLOGY -->
+      <section class="tab-panel" id="tab-methodology">
+        <div class="method-box">
+          <h3>Prediction Problem</h3>
+          <p>The target variable is derived from <b style="color:var(--text)">DeliveryTimeMinutes</b>. Any order with delivery time &gt; 45 minutes is labelled as a <b style="color:var(--text)">Late Delivery</b>. This creates a binary classification problem solved entirely client-side with logistic regression via gradient descent — no backend required.</p>
+
+          <h3>Features</h3>
+          <ul>
+            <li>One-hot encoded <b>Zone</b>, <b>Cuisine</b>, <b>PaymentMethod</b></li>
+            <li>Binary <b>IsFirstOrder</b></li>
+            <li>Standardized continuous: <b>DistanceKM</b>, <b>PrepTimeMinutes</b>, <b>OrderValueINR</b></li>
+          </ul>
+
+          <h3>Why Logistic Regression?</h3>
+          <p>It is fast to train in the browser, produces well-calibrated probabilities, and the coefficients remain directly interpretable — important when explaining “why this order is high-risk” to operations teams.</p>
+
+          <h3>Limitations</h3>
+          <ul>
+            <li>The model retrains on every page load / Excel upload using an 80/20 seeded split, so metrics can shift slightly.</li>
+            <li>It is a linear model over a modest feature set. A production system would use cross-validation, richer features (traffic, weather, partner load) and a gradient-boosted model trained offline.</li>
+            <li>Synthetic seed data is provided so the demo works immediately. Upload your real Swiggy export for accurate results.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- UPLOAD -->
+      <section class="tab-panel" id="tab-upload">
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Upload Excel / CSV of Swiggy Orders</div></div>
+          <div class="upload-area" id="uploadArea">
+            <div style="font-size:28px;margin-bottom:8px;">📄</div>
+            <div style="font-weight:600;margin-bottom:4px;">Drop file here or click to browse</div>
+            <div style="font-size:12px;color:var(--text-faint);">Expected columns: Zone, Cuisine, PaymentMethod, DistanceKM, PrepTimeMinutes, OrderValueINR, DeliveryTimeMinutes, IsFirstOrder (optional)</div>
+            <input type="file" id="fileUpload" accept=".xlsx,.xls,.csv" style="display:none;">
+            <div style="margin-top:14px;">
+              <button class="btn btn-ghost" id="btnBrowse">Choose File</button>
+            </div>
+            <div class="upload-msg" id="uploadMsg"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== SYNTHETIC SWIGGY DATA ===================== */
+const ZONES = ['North','South','East','West','Central'];
+const CUISINES = ['North Indian','South Indian','Chinese','Biryani','Pizza','Burgers','Desserts','Healthy'];
+const PAYMENTS = ['UPI','Card','Cash','Wallet'];
+const CITIES = ['Bangalore','Hyderabad','Mumbai','Delhi','Chennai','Pune'];
+
+function seededRand(seed){
+  let s = seed|0;
+  return function(){
+    s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s>>>15, 1|s);
+    t = t + Math.imul(t ^ t>>>7, 61|t) ^ t;
+    return ((t ^ t>>>14)>>>0)/4294967296;
+  };
+}
+
+function generateSyntheticData(n=420){
+  const rand = seededRand(2024);
+  const rows = [];
+  for(let i=0;i<n;i++){
+    const zone = ZONES[Math.floor(rand()*ZONES.length)];
+    const cuisine = CUISINES[Math.floor(rand()*CUISINES.length)];
+    const pay = PAYMENTS[Math.floor(rand()*PAYMENTS.length)];
+    const isFirst = rand()<0.18 ? 1 : 0;
+    const dist = +(1.2 + rand()*9.5).toFixed(1);
+    const prep = Math.round(8 + rand()*28 + (cuisine==='Biryani'||cuisine==='Pizza'?6:0));
+    const value = Math.round(120 + rand()*680 + (isFirst?-40:0));
+    let base = 12 + dist*3.8 + prep*0.55;
+    if(zone==='Central'||zone==='West') base += 4;
+    if(isFirst) base += 3;
+    if(cuisine==='Biryani') base += 5;
+    const noise = (rand()-0.5)*14;
+    const delivery = Math.max(12, Math.round(base + noise));
+    const late = delivery > 45 ? 1 : 0;
+    rows.push({
+      OrderID: 'ORD'+(10000+i),
+      Zone: zone,
+      Cuisine: cuisine,
+      PaymentMethod: pay,
+      CustomerCity: CITIES[Math.floor(rand()*CITIES.length)],
+      DistanceKM: dist,
+      PrepTimeMinutes: prep,
+      OrderValueINR: value,
+      DeliveryTimeMinutes: delivery,
+      IsFirstOrder: isFirst,
+      Late: late
+    });
+  }
+  return rows;
+}
+
+let ORDER_DATA = generateSyntheticData();
+let model = null;
+const charts = {};
+
+/* ===================== HELPERS ===================== */
+function uniqueSorted(arr){
+  return [...new Set(arr.filter(x=>x!=null && x!==''))].sort();
+}
+function applyFilters(data){
+  const z = document.getElementById('fZone').value;
+  const c = document.getElementById('fCuisine').value;
+  const p = document.getElementById('fPay').value;
+  return data.filter(d=>{
+    if(z!=='All' && d.Zone!==z) return false;
+    if(c!=='All' && d.Cuisine!==c) return false;
+    if(p!=='All' && d.PaymentMethod!==p) return false;
+    return true;
+  });
+}
+function validRows(data){
+  return data.filter(d=>
+    d.DistanceKM!=null && d.PrepTimeMinutes!=null &&
+    d.OrderValueINR!=null && d.DeliveryTimeMinutes!=null &&
+    d.Zone && d.Cuisine && d.PaymentMethod
+  );
+}
+
+/* ===================== MODEL ===================== */
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed>>>15, 1|seed);
+    t = t + Math.imul(t ^ t>>>7, 61|t) ^ t;
+    return ((t ^ t>>>14)>>>0)/4294967296;
+  };
+}
+
+function buildFeatureSpace(zones, cuisines, pays){
+  const names = [];
+  zones.forEach(z=>names.push('zone:'+z));
+  cuisines.forEach(c=>names.push('cuisine:'+c));
+  pays.forEach(p=>names.push('pay:'+p));
+  names.push('first_order');
+  names.push('dist_z');
+  names.push('prep_z');
+  names.push('value_z');
+  return names;
+}
+
+function rowToVector(row, zones, cuisines, pays, means, stds){
+  const v = [];
+  zones.forEach(z=>v.push(row.Zone===z?1:0));
+  cuisines.forEach(c=>v.push(row.Cuisine===c?1:0));
+  pays.forEach(p=>v.push(row.PaymentMethod===p?1:0));
+  v.push(row.IsFirstOrder?1:0);
+  v.push(stds.dist ? (row.DistanceKM-means.dist)/stds.dist : 0);
+  v.push(stds.prep ? (row.PrepTimeMinutes-means.prep)/stds.prep : 0);
+  v.push(stds.value ? (row.OrderValueINR-means.value)/stds.value : 0);
+  return v;
+}
+
+function trainModel(){
+  const valid = validRows(ORDER_DATA);
+  const zones = uniqueSorted(ORDER_DATA.map(d=>d.Zone));
+  const cuisines = uniqueSorted(ORDER_DATA.map(d=>d.Cuisine));
+  const pays = uniqueSorted(ORDER_DATA.map(d=>d.PaymentMethod));
+  const featureNames = buildFeatureSpace(zones, cuisines, pays);
+
+  const means = {
+    dist: valid.reduce((a,b)=>a+b.DistanceKM,0)/valid.length,
+    prep: valid.reduce((a,b)=>a+b.PrepTimeMinutes,0)/valid.length,
+    value: valid.reduce((a,b)=>a+b.OrderValueINR,0)/valid.length
+  };
+  const stds = {
+    dist: Math.sqrt(valid.reduce((a,b)=>a+(b.DistanceKM-means.dist)**2,0)/valid.length)||1,
+    prep: Math.sqrt(valid.reduce((a,b)=>a+(b.PrepTimeMinutes-means.prep)**2,0)/valid.length)||1,
+    value: Math.sqrt(valid.reduce((a,b)=>a+(b.OrderValueINR-means.value)**2,0)/valid.length)||1
+  };
+
+  const rand = mulberry32(42);
+  const shuffled = [...valid].sort(()=>rand()-0.5);
+  const splitIdx = Math.floor(shuffled.length*0.8);
+  const trainSet = shuffled.slice(0,splitIdx);
+  const testSet = shuffled.slice(splitIdx);
+
+  const X = trainSet.map(r=>rowToVector(r,zones,cuisines,pays,means,stds));
+  const y = trainSet.map(r=>r.Late?1:0);
+  const nFeat = featureNames.length;
+  let w = new Array(nFeat).fill(0);
+  let b = 0;
+  const lr=0.32, epochs=650, l2=0.025;
+  const n = X.length;
+
+  for(let e=0;e<epochs;e++){
+    const gradW = new Array(nFeat).fill(0);
+    let gradB = 0;
+    for(let i=0;i<n;i++){
+      let z = b;
+      for(let j=0;j<nFeat;j++) z += w[j]*X[i][j];
+      const pred = 1/(1+Math.exp(-Math.max(-20,Math.min(20,z))));
+      const err = pred - y[i];
+      for(let j=0;j<nFeat;j++) gradW[j] += err*X[i][j];
+      gradB += err;
+    }
+    for(let j=0;j<nFeat;j++) w[j] -= lr*(gradW[j]/n + l2*w[j]);
+    b -= lr*(gradB/n);
+  }
+
+  function predictProb(vec){
+    let z = b;
+    for(let j=0;j<nFeat;j++) z += w[j]*vec[j];
+    return 1/(1+Math.exp(-Math.max(-20,Math.min(20,z))));
+  }
+
+  // Evaluate on test
+  let tp=0,tn=0,fp=0,fn=0;
+  testSet.forEach(r=>{
+    const prob = predictProb(rowToVector(r,zones,cuisines,pays,means,stds));
+    const pred = prob>=0.5 ? 1 : 0;
+    const actual = r.Late?1:0;
+    if(pred===1 && actual===1) tp++;
+    else if(pred===0 && actual===0) tn++;
+    else if(pred===1 && actual===0) fp++;
+    else fn++;
+  });
+  const accuracy = (tp+tn)/(tp+tn+fp+fn||1);
+  const precision = tp/(tp+fp||1);
+  const recall = tp/(tp+fn||1);
+  const f1 = 2*precision*recall/(precision+recall||1);
+  const importance = featureNames.map((name,i)=>({name,value:Math.abs(w[i])})).sort((a,b)=>b.value-a.value);
+  model = {zones,cuisines,pays,means,stds,featureNames,w,b,predictProb,metrics:{accuracy,precision,recall,f1,tp,tn,fp,fn},importance};
+  return model;
+}
+
+/* ===================== UI + CHARTS ===================== */
+function fillSelect(id, values, allLabel){
+  const el=document.getElementById(id); if(!el) return;
+  const current=el.value;
+  el.innerHTML=(allLabel ? `<option value="All">${allLabel}</option>` : '')+
+    values.map(v=>`<option value="${String(v).replace(/"/g,'&quot;')}">${v}</option>`).join('');
+  if([...el.options].some(o=>o.value===current)) el.value=current;
+}
+function chartOptions(){
+  return {responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8B97A8',font:{family:'Inter'}}}},scales:{x:{ticks:{color:'#8B97A8'},grid:{color:'rgba(139,151,168,.12)'}},y:{ticks:{color:'#8B97A8'},grid:{color:'rgba(139,151,168,.12)'}}}};
+}
+function makeChart(id, config){
+  const canvas=document.getElementById(id); if(!canvas || typeof window.Chart!=='function') return;
+  if(charts[id]) charts[id].destroy();
+  charts[id]=new window.Chart(canvas.getContext('2d'),config);
+}
+function renderKpis(data){
+  const late=data.filter(d=>d.Late).length, avg=data.reduce((a,d)=>a+d.DeliveryTimeMinutes,0)/(data.length||1);
+  document.getElementById('kpiGrid').innerHTML=[['Total Orders',data.length.toLocaleString(),'records'],['Late Delivery Rate',((late/(data.length||1))*100).toFixed(1)+'%',late+' late orders'],['Avg Delivery Time',avg.toFixed(1)+' min','across filtered orders'],['Model Status',model?'Ready':'Training','logistic regression']].map(x=>`<div class="kpi"><div class="kpi-label">${x[0]}</div><div class="kpi-value">${x[1]}</div><div class="kpi-sub">${x[2]}</div></div>`).join('');
+}
+function renderCharts(data){
+  const zones=uniqueSorted(data.map(d=>d.Zone));
+  makeChart('chartZone',{type:'bar',data:{labels:zones,datasets:[{label:'On-time',data:zones.map(z=>data.filter(d=>d.Zone===z&&!d.Late).length),backgroundColor:'#3DDC97'},{label:'Late',data:zones.map(z=>data.filter(d=>d.Zone===z&&d.Late).length),backgroundColor:'#FF6259'}]},options:chartOptions()});
+  const cuisines=uniqueSorted(data.map(d=>d.Cuisine));
+  makeChart('chartCuisine',{type:'bar',data:{labels:cuisines,datasets:[{label:'Avg minutes',data:cuisines.map(c=>{const a=data.filter(d=>d.Cuisine===c);return a.reduce((s,d)=>s+d.DeliveryTimeMinutes,0)/(a.length||1)}),backgroundColor:'#FC8019',borderRadius:4}]},options:{...chartOptions(),indexAxis:'y'}});
+  const sample=data.filter((_,i)=>i%Math.max(1,Math.floor(data.length/120))===0);
+  makeChart('chartScatter',{type:'scatter',data:{datasets:[{label:'Orders',data:sample.map(d=>({x:d.DistanceKM,y:d.DeliveryTimeMinutes})),backgroundColor:'#4FA8FF'}]},options:chartOptions()});
+  if(model) makeChart('chartFeatureImportance',{type:'bar',data:{labels:model.importance.slice(0,10).map(x=>x.name),datasets:[{label:'Importance',data:model.importance.slice(0,10).map(x=>x.value),backgroundColor:'#FC8019'}]},options:{...chartOptions(),indexAxis:'y'}});
+}
+function renderPerformance(){
+  const m=model.metrics;
+  document.getElementById('metricGrid').innerHTML=[['Accuracy',m.accuracy],['Precision',m.precision],['Recall',m.recall],['F1 Score',m.f1]].map(x=>`<div class="metric-card"><div class="val">${(x[1]*100).toFixed(1)}%</div><div class="lab">${x[0]}</div></div>`).join('');
+  document.getElementById('cmTable').innerHTML=`<thead><tr><th></th><th>Predicted On-time</th><th>Predicted Late</th></tr></thead><tbody><tr><th>Actual On-time</th><td>${m.tn}</td><td>${m.fp}</td></tr><tr><th>Actual Late</th><td>${m.fn}</td><td>${m.tp}</td></tr></tbody>`;
+  document.getElementById('methodologyText').textContent=`Trained on ${ORDER_DATA.length} records with an 80/20 seeded train/test split, standardized numeric features, one-hot categorical features, gradient descent, and L2 regularization.`;
+}
+function renderExplorer(data){document.getElementById('explorerCount').textContent=data.length;document.getElementById('explorerBody').innerHTML=data.slice(0,300).map(d=>`<tr><td>${d.OrderID}</td><td>${d.Zone}</td><td>${d.Cuisine}</td><td>${d.PaymentMethod}</td><td>${d.DistanceKM}</td><td>${d.PrepTimeMinutes}</td><td>₹${d.OrderValueINR}</td><td>${d.DeliveryTimeMinutes} min</td><td><span class="badge ${d.Late?'badge-late':'badge-ontime'}">${d.Late?'Late':'On-time'}</span></td></tr>`).join('');}
+function renderAll(){
+  model=trainModel();
+  const zones=uniqueSorted(ORDER_DATA.map(d=>d.Zone)), cuisines=uniqueSorted(ORDER_DATA.map(d=>d.Cuisine)), pays=uniqueSorted(ORDER_DATA.map(d=>d.PaymentMethod));
+  fillSelect('fZone',zones,'All Zones'); fillSelect('fCuisine',cuisines,'All Cuisines'); fillSelect('fPay',pays,'All Methods');
+  fillSelect('pZone',zones); fillSelect('pCuisine',cuisines); fillSelect('pPay',pays);
+  const filtered=applyFilters(ORDER_DATA); renderKpis(filtered); renderCharts(filtered); renderExplorer(filtered); renderPerformance();
+  document.getElementById('footRecordCount').textContent=ORDER_DATA.length; document.getElementById('footModelStatus').textContent='ready'; document.getElementById('modelStatusMini').textContent='ready';
+}
+function predict(){
+  const row={Zone:document.getElementById('pZone').value,Cuisine:document.getElementById('pCuisine').value,PaymentMethod:document.getElementById('pPay').value,IsFirstOrder:+document.getElementById('pFirst').value,DistanceKM:+document.getElementById('pDist').value,PrepTimeMinutes:+document.getElementById('pPrep').value,OrderValueINR:+document.getElementById('pValue').value};
+  const prob=model.predictProb(rowToVector(row,model.zones,model.cuisines,model.pays,model.means,model.stds)); const level=prob>.65?'high':prob>.35?'med':'low';
+  document.getElementById('predResult').innerHTML=`<div class="risk-badge risk-${level}">${level.toUpperCase()} RISK</div><div class="pred-prob">${(prob*100).toFixed(1)}%</div><div style="color:var(--text-dim);font-size:12px;">Estimated probability of delivery over 45 minutes</div><div class="pred-drivers"><div class="driver-row"><span>Distance</span><div class="driver-bar"><div class="driver-fill" style="width:${Math.min(100,row.DistanceKM/12*100)}%;background:var(--accent)"></div></div><b>${row.DistanceKM} km</b></div><div class="driver-row"><span>Prep time</span><div class="driver-bar"><div class="driver-fill" style="width:${Math.min(100,row.PrepTimeMinutes/45*100)}%;background:var(--warning)"></div></div><b>${row.PrepTimeMinutes} min</b></div></div>`;
+}
+function bindUi(){
+  document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));item.classList.add('active');document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active'));document.getElementById('tab-'+item.dataset.tab).classList.add('active');document.getElementById('pageTitle').textContent=item.textContent.trim();}));
+  ['fZone','fCuisine','fPay'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{const d=applyFilters(ORDER_DATA);renderKpis(d);renderCharts(d);renderExplorer(d);}));
+  document.getElementById('btnPredict').addEventListener('click',predict);
+  const area=document.getElementById('uploadArea'), input=document.getElementById('fileUpload'); document.getElementById('btnBrowse').addEventListener('click',()=>input.click());
+  input.addEventListener('change',e=>handleFile(e.target.files[0])); area.addEventListener('dragover',e=>{e.preventDefault();area.classList.add('drag')}); area.addEventListener('dragleave',()=>area.classList.remove('drag')); area.addEventListener('drop',e=>{e.preventDefault();area.classList.remove('drag');handleFile(e.dataTransfer.files[0])});
+}
+function handleFile(file){if(!file||typeof XLSX==='undefined')return;const reader=new FileReader();reader.onload=e=>{const wb=XLSX.read(e.target.result,{type:'array'}), raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); ORDER_DATA=raw.map((r,i)=>({...r,OrderID:r.OrderID||'ORD'+(10000+i),DistanceKM:+r.DistanceKM,PrepTimeMinutes:+r.PrepTimeMinutes,OrderValueINR:+r.OrderValueINR,DeliveryTimeMinutes:+r.DeliveryTimeMinutes,IsFirstOrder:+r.IsFirstOrder||0,Late:+r.DeliveryTimeMinutes>45})).filter(validRows);document.getElementById('uploadMsg').textContent=`Loaded ${ORDER_DATA.length} records`;document.getElementById('uploadMsg').className='upload-msg ok';renderAll()};reader.readAsArrayBuffer(file)}
+function startApp(){if(typeof window.Chart!=='function'){const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';s.onload=()=>{bindUi();renderAll()};s.onerror=()=>{document.getElementById('footModelStatus').textContent='chart library unavailable';bindUi();renderAll()};document.head.appendChild(s)}else{bindUi();renderAll()}}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',startApp); else startApp();
+</script>
+</body>
+</html> 
